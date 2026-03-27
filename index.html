@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard – MedPlus HMS</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Dashboard</div>
+      <div class="topbar-right">
+        <span class="topbar-date" id="today-date"></span>
+        <div class="avatar">AD</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="stats-grid" id="stats-grid"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Patients</span>
+            <a href="pages/patients.html" class="btn btn-outline btn-sm">View all</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Blood</th><th>Status</th></tr></thead>
+              <tbody id="recent-patients"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Today's Appointments</span>
+            <a href="pages/appointments.html" class="btn btn-outline btn-sm">View all</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Patient</th><th>Doctor</th><th>Status</th></tr></thead>
+              <tbody id="recent-appts"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:0;">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Room Overview</span></div>
+          <div id="room-overview"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Billing Summary</span></div>
+          <div id="billing-summary"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="js/app.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+  function renderDashboard() {
+    const patients = DB.get('patients');
+    const doctors = DB.get('doctors');
+    const appts = DB.get('appointments');
+    const rooms = DB.get('rooms');
+    const bills = DB.get('billing');
+
+    const admitted = patients.filter(p=>p.status==='Admitted').length;
+    const availDocs = doctors.filter(d=>d.status==='Available').length;
+    const pendingAppts = appts.filter(a=>a.status==='Pending').length;
+    const availRooms = rooms.filter(r=>r.status==='Available').length;
+
+    document.getElementById('stats-grid').innerHTML = `
+      <div class="stat-card green"><div class="stat-label">Total Patients</div><div class="stat-value">${patients.length}</div><div class="stat-sub">${admitted} currently admitted</div></div>
+      <div class="stat-card blue"><div class="stat-label">Doctors</div><div class="stat-value">${doctors.length}</div><div class="stat-sub">${availDocs} available today</div></div>
+      <div class="stat-card amber"><div class="stat-label">Appointments</div><div class="stat-value">${appts.length}</div><div class="stat-sub">${pendingAppts} pending</div></div>
+      <div class="stat-card red"><div class="stat-label">Rooms</div><div class="stat-value">${rooms.length}</div><div class="stat-sub">${availRooms} available</div></div>
+    `;
+
+    document.getElementById('recent-patients').innerHTML = patients.slice(-4).reverse().map(p=>`
+      <tr><td>${p.name}</td><td>${p.blood}</td><td>${badgeHtml(p.status)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:20px">No patients yet</td></tr>';
+
+    document.getElementById('recent-appts').innerHTML = appts.slice(-4).reverse().map(a=>`
+      <tr><td>${a.patientName}</td><td>${a.doctorName}</td><td>${badgeHtml(a.status)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:20px">No appointments</td></tr>';
+
+    const roomTypes = {};
+    rooms.forEach(r=>{ roomTypes[r.type] = (roomTypes[r.type]||{total:0,occupied:0}); roomTypes[r.type].total++; if(r.status==='Occupied') roomTypes[r.type].occupied++; });
+    document.getElementById('room-overview').innerHTML = Object.entries(roomTypes).map(([type,d])=>{
+      const pct = Math.round(d.occupied/d.total*100);
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span>${type}</span><span style="color:var(--text3)">${d.occupied}/${d.total} occupied</span></div>
+        <div style="background:var(--surface2);border-radius:4px;height:6px"><div style="background:var(--accent2);height:6px;border-radius:4px;width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
+
+    const totalBilled = bills.reduce((s,b)=>s+b.amount,0);
+    const totalPaid = bills.filter(b=>b.status==='Paid').reduce((s,b)=>s+b.amount,0);
+    const pending = totalBilled - totalPaid;
+    document.getElementById('billing-summary').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Total Billed</div>
+          <div style="font-size:22px;font-weight:600;font-family:'Fraunces',serif">₹${totalBilled.toLocaleString('en-IN')}</div>
+        </div>
+        <div style="background:var(--accent-light);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Collected</div>
+          <div style="font-size:22px;font-weight:600;font-family:'Fraunces',serif;color:var(--accent2)">₹${totalPaid.toLocaleString('en-IN')}</div>
+        </div>
+      </div>
+      <div style="margin-top:14px;padding:12px;background:var(--amber-light);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;color:var(--amber)">Pending Collection</span>
+        <span style="font-weight:600;color:var(--amber)">₹${pending.toLocaleString('en-IN')}</span>
+      </div>`;
+  }
+  renderDashboard();
+</script>
+</body>
+</html>

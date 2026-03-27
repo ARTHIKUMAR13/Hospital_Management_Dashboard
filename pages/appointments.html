@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Appointments – MedPlus HMS</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Appointments</div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openAddModal()">+ Book Appointment</button>
+        <div class="avatar">AD</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="search-bar">
+          <input type="text" id="search" placeholder="Search patient or doctor…" oninput="renderTable()"/>
+          <select id="filter-status" onchange="renderTable()">
+            <option value="">All Status</option>
+            <option>Confirmed</option><option>Pending</option><option>Cancelled</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Patient</th><th>Doctor</th><th>Department</th><th>Date</th><th>Time</th><th>Reason</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="appt-table"></tbody>
+          </table>
+        </div>
+        <div id="empty-appts" class="empty-state" style="display:none">
+          <div class="empty-icon">📅</div>
+          <p>No appointments found.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="appt-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Book Appointment</h3>
+      <button class="modal-close" onclick="closeModal('appt-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="a-id"/>
+     <div class="form-group">
+  <label>Patient Type</label>
+  <select id="patient-type" onchange="togglePatientInput()">
+    <option value="existing">Existing Patient</option>
+    <option value="new">New Patient</option>
+  </select>
+</div>
+
+<div class="form-group" id="existing-patient-group">
+  <label>Select Patient</label>
+  <select id="a-patient"></select>
+</div>
+
+<div class="form-group" id="new-patient-group" style="display:none;">
+  <label>Patient Name</label>
+  <input type="text" id="a-new-patient" placeholder="Enter patient name"/>
+</div>
+      <div class="form-group">
+        <label>Doctor</label>
+        <select id="a-doctor" onchange="fillDept()"></select>
+      </div>
+      <div class="form-group">
+        <label>Department</label>
+        <input type="text" id="a-dept" readonly placeholder="Auto-filled"/>
+      </div>
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="a-date"/>
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="a-time"/>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="a-status">
+          <option>Confirmed</option><option>Pending</option><option>Cancelled</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Reason / Notes</label>
+        <textarea id="a-reason" placeholder="Describe the reason for visit…"></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal('appt-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAppt()">Save Appointment</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+function populateSelects() {
+  const patients = DB.get('patients');
+  const doctors = DB.get('doctors');
+  document.getElementById('a-patient').innerHTML = patients.map(p=>`<option value="${p.name}">${p.name}</option>`).join('');
+  document.getElementById('a-doctor').innerHTML = doctors.map(d=>`<option value="${d.name}" data-dept="${d.dept}">${d.name}</option>`).join('');
+  fillDept();
+}
+
+function fillDept() {
+  const sel = document.getElementById('a-doctor');
+  const opt = sel.options[sel.selectedIndex];
+  if (opt) document.getElementById('a-dept').value = opt.dataset.dept || '';
+}
+
+function openAddModal() {
+  document.getElementById('modal-title').textContent = 'Book Appointment';
+  document.getElementById('a-id').value = '';
+  document.getElementById('a-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('a-time').value = '09:00';
+  document.getElementById('a-reason').value = '';
+  document.getElementById('a-status').value = 'Confirmed';
+  populateSelects();
+  openModal('appt-modal');
+}
+function togglePatientInput() {
+  const type = document.getElementById('patient-type').value;
+
+  if (type === 'existing') {
+    document.getElementById('existing-patient-group').style.display = 'block';
+    document.getElementById('new-patient-group').style.display = 'none';
+  } else {
+    document.getElementById('existing-patient-group').style.display = 'none';
+    document.getElementById('new-patient-group').style.display = 'block';
+  }
+}
+
+function renderTable() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const st = document.getElementById('filter-status').value;
+  let appts = DB.get('appointments');
+  if (q) appts = appts.filter(a => a.patientName.toLowerCase().includes(q) || a.doctorName.toLowerCase().includes(q));
+  if (st) appts = appts.filter(a => a.status === st);
+  document.getElementById('empty-appts').style.display = appts.length ? 'none' : 'block';
+  document.getElementById('appt-table').innerHTML = appts.map(a => `
+    <tr>
+      <td style="color:var(--text3)">#${a.id}</td>
+      <td>${a.patientName}</td>
+      <td>${a.doctorName}</td>
+      <td><span class="badge badge-blue">${a.dept}</span></td>
+      <td>${formatDate(a.date)}</td>
+      <td>${a.time}</td>
+      <td style="color:var(--text2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.reason}</td>
+      <td>${badgeHtml(a.status)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="editAppt(${a.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAppt(${a.id})">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function saveAppt() {
+  const id = document.getElementById('a-id').value;
+  const appts = DB.get('appointments');
+  const obj = {
+    id: id ? +id : DB.nextId('appointments'),
+    patientName: document.getElementById('a-patient').value,
+    doctorName: document.getElementById('a-doctor').value,
+    dept: document.getElementById('a-dept').value,
+    date: document.getElementById('a-date').value,
+    time: document.getElementById('a-time').value,
+    reason: document.getElementById('a-reason').value,
+    status: document.getElementById('a-status').value,
+  };
+  if (id) { appts[appts.findIndex(a => a.id === +id)] = obj; showToast('Appointment updated'); }
+  else { appts.push(obj); showToast('Appointment booked'); }
+  DB.set('appointments', appts);
+  closeModal('appt-modal');
+  renderTable();
+}
+
+function editAppt(id) {
+  const a = DB.get('appointments').find(a => a.id === id);
+  document.getElementById('modal-title').textContent = 'Edit Appointment';
+  document.getElementById('a-id').value = a.id;
+  populateSelects();
+  document.getElementById('a-patient').value = a.patientName;
+  document.getElementById('a-doctor').value = a.doctorName;
+  document.getElementById('a-dept').value = a.dept;
+  document.getElementById('a-date').value = a.date;
+  document.getElementById('a-time').value = a.time;
+  document.getElementById('a-reason').value = a.reason;
+  document.getElementById('a-status').value = a.status;
+  openModal('appt-modal');
+}
+
+function deleteAppt(id) {
+  if (!confirm('Delete this appointment?')) return;
+  DB.set('appointments', DB.get('appointments').filter(a => a.id !== id));
+  showToast('Appointment deleted');
+  renderTable();
+}
+
+document.getElementById('appt-modal').addEventListener('click', e => { if(e.target===e.currentTarget) closeModal('appt-modal'); });
+renderTable();
+</script>
+</body>
+</html>

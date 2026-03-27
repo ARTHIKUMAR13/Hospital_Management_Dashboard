@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Rooms – MedPlus HMS</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Room Management</div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openModal('room-modal')">+ Add Room</button>
+        <div class="avatar">AD</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="search-bar">
+          <input type="text" id="search" placeholder="Search room number or type…" oninput="renderTable()"/>
+          <select id="filter-type" onchange="renderTable()">
+            <option value="">All Types</option>
+            <option>General</option><option>Private</option><option>ICU</option><option>Emergency</option>
+          </select>
+          <select id="filter-status" onchange="renderTable()">
+            <option value="">All Status</option>
+            <option>Available</option><option>Occupied</option><option>Maintenance</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Room No.</th><th>Type</th><th>Floor</th><th>Capacity</th><th>Occupied</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="room-table"></tbody>
+          </table>
+        </div>
+        <div id="empty-rooms" class="empty-state" style="display:none">
+          <div class="empty-icon">🛏️</div>
+          <p>No rooms found.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="room-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Add Room</h3>
+      <button class="modal-close" onclick="closeModal('room-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="r-id"/>
+      <div class="form-group">
+        <label>Room Number</label>
+        <input type="text" id="r-number" placeholder="e.g. 101"/>
+      </div>
+      <div class="form-group">
+        <label>Room Type</label>
+        <select id="r-type">
+          <option>General</option><option>Private</option><option>ICU</option><option>Emergency</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Floor</label>
+        <input type="text" id="r-floor" placeholder="e.g. 1"/>
+      </div>
+      <div class="form-group">
+        <label>Capacity (beds)</label>
+        <input type="number" id="r-capacity" min="1" max="20" placeholder="4"/>
+      </div>
+      <div class="form-group">
+        <label>Currently Occupied</label>
+        <input type="number" id="r-occupied" min="0" placeholder="0"/>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="r-status">
+          <option>Available</option><option>Occupied</option><option>Maintenance</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal('room-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRoom()">Save Room</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+function renderTable() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const type = document.getElementById('filter-type').value;
+  const st = document.getElementById('filter-status').value;
+  let rooms = DB.get('rooms');
+  if (q) rooms = rooms.filter(r => r.number.toLowerCase().includes(q) || r.type.toLowerCase().includes(q));
+  if (type) rooms = rooms.filter(r => r.type === type);
+  if (st) rooms = rooms.filter(r => r.status === st);
+  document.getElementById('empty-rooms').style.display = rooms.length ? 'none' : 'block';
+  document.getElementById('room-table').innerHTML = rooms.map(r => {
+    const pct = r.capacity ? Math.round(r.occupied / r.capacity * 100) : 0;
+    return `<tr>
+      <td style="color:var(--text3)">#${r.id}</td>
+      <td><strong>${r.number}</strong></td>
+      <td>${r.type}</td>
+      <td>Floor ${r.floor}</td>
+      <td>${r.capacity}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span>${r.occupied}/${r.capacity}</span>
+          <div style="background:var(--surface2);border-radius:4px;height:5px;width:60px"><div style="background:var(--accent2);height:5px;border-radius:4px;width:${pct}%"></div></div>
+        </div>
+      </td>
+      <td>${badgeHtml(r.status)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="editRoom(${r.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRoom(${r.id})">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function saveRoom() {
+  const number = document.getElementById('r-number').value.trim();
+  if (!number) { alert('Room number is required'); return; }
+  const id = document.getElementById('r-id').value;
+  const rooms = DB.get('rooms');
+  const obj = {
+    id: id ? +id : DB.nextId('rooms'),
+    number, type: document.getElementById('r-type').value,
+    floor: document.getElementById('r-floor').value,
+    capacity: +document.getElementById('r-capacity').value,
+    occupied: +document.getElementById('r-occupied').value,
+    status: document.getElementById('r-status').value,
+  };
+  if (id) { rooms[rooms.findIndex(r => r.id === +id)] = obj; showToast('Room updated'); }
+  else { rooms.push(obj); showToast('Room added'); }
+  DB.set('rooms', rooms);
+  closeModal('room-modal');
+  renderTable();
+}
+
+function editRoom(id) {
+  const r = DB.get('rooms').find(r => r.id === id);
+  document.getElementById('modal-title').textContent = 'Edit Room';
+  document.getElementById('r-id').value = r.id;
+  document.getElementById('r-number').value = r.number;
+  document.getElementById('r-type').value = r.type;
+  document.getElementById('r-floor').value = r.floor;
+  document.getElementById('r-capacity').value = r.capacity;
+  document.getElementById('r-occupied').value = r.occupied;
+  document.getElementById('r-status').value = r.status;
+  openModal('room-modal');
+}
+
+function deleteRoom(id) {
+  if (!confirm('Delete this room?')) return;
+  DB.set('rooms', DB.get('rooms').filter(r => r.id !== id));
+  showToast('Room deleted');
+  renderTable();
+}
+
+document.getElementById('room-modal').addEventListener('click', e => { if(e.target===e.currentTarget) closeModal('room-modal'); });
+renderTable();
+</script>
+</body>
+</html>

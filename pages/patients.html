@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Patients – MedPlus HMS</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Patients</div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openModal('patient-modal')">+ Add Patient</button>
+        <div class="avatar">AD</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="search-bar">
+          <input type="text" id="search" placeholder="Search by name, blood group or status…" oninput="renderTable()"/>
+          <select id="filter-status" onchange="renderTable()">
+            <option value="">All Status</option>
+            <option>Admitted</option>
+            <option>OPD</option>
+            <option>Discharged</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Name</th><th>Age</th><th>Gender</th><th>Blood</th><th>Phone</th><th>Admitted</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="patient-table"></tbody>
+          </table>
+        </div>
+        <div id="empty-patients" class="empty-state" style="display:none">
+          <div class="empty-icon">🧑‍⚕️</div>
+          <p>No patients found. Add one to get started.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="patient-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Add Patient</h3>
+      <button class="modal-close" onclick="closeModal('patient-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="p-id"/>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="p-name" placeholder="Patient name"/>
+      </div>
+      <div class="form-group">
+        <label>Age</label>
+        <input type="number" id="p-age" placeholder="Age" min="0" max="120"/>
+      </div>
+      <div class="form-group">
+        <label>Gender</label>
+        <select id="p-gender">
+          <option>Male</option><option>Female</option><option>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="text" id="p-phone" placeholder="10-digit number"/>
+      </div>
+      <div class="form-group">
+        <label>Blood Group</label>
+        <select id="p-blood">
+          <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+          <option>O+</option><option>O-</option><option>AB+</option><option>AB-</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Admission Date</label>
+        <input type="date" id="p-admitted"/>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="p-status">
+          <option>Admitted</option><option>OPD</option><option>Discharged</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Address</label>
+        <input type="text" id="p-address" placeholder="City, State"/>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeModal('patient-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePatient()">Save Patient</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+function renderTable() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const st = document.getElementById('filter-status').value;
+  let patients = DB.get('patients');
+  if (q) patients = patients.filter(p => p.name.toLowerCase().includes(q) || p.blood.toLowerCase().includes(q) || p.status.toLowerCase().includes(q));
+  if (st) patients = patients.filter(p => p.status === st);
+  const tbody = document.getElementById('patient-table');
+  document.getElementById('empty-patients').style.display = patients.length ? 'none' : 'block';
+  tbody.innerHTML = patients.map(p => `
+    <tr>
+      <td style="color:var(--text3)">#${p.id}</td>
+      <td>${p.name}</td>
+      <td>${p.age}</td>
+      <td>${p.gender}</td>
+      <td><span class="badge badge-blue">${p.blood}</span></td>
+      <td>${p.phone}</td>
+      <td>${formatDate(p.admitted)}</td>
+      <td>${badgeHtml(p.status)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="editPatient(${p.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePatient(${p.id})">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function savePatient() {
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  const id = document.getElementById('p-id').value;
+  const patients = DB.get('patients');
+  const obj = {
+    id: id ? +id : DB.nextId('patients'),
+    name, age: +document.getElementById('p-age').value,
+    gender: document.getElementById('p-gender').value,
+    phone: document.getElementById('p-phone').value,
+    blood: document.getElementById('p-blood').value,
+    admitted: document.getElementById('p-admitted').value,
+    address: document.getElementById('p-address').value,
+    status: document.getElementById('p-status').value,
+  };
+  if (id) {
+    const idx = patients.findIndex(p => p.id === +id);
+    patients[idx] = obj;
+    showToast('Patient updated successfully');
+  } else {
+    patients.push(obj);
+    showToast('Patient added successfully');
+  }
+  DB.set('patients', patients);
+  closeModal('patient-modal');
+  renderTable();
+}
+
+function editPatient(id) {
+  const p = DB.get('patients').find(p => p.id === id);
+  document.getElementById('modal-title').textContent = 'Edit Patient';
+  document.getElementById('p-id').value = p.id;
+  document.getElementById('p-name').value = p.name;
+  document.getElementById('p-age').value = p.age;
+  document.getElementById('p-gender').value = p.gender;
+  document.getElementById('p-phone').value = p.phone;
+  document.getElementById('p-blood').value = p.blood;
+  document.getElementById('p-admitted').value = p.admitted;
+  document.getElementById('p-address').value = p.address;
+  document.getElementById('p-status').value = p.status;
+  openModal('patient-modal');
+}
+
+function deletePatient(id) {
+  if (!confirm('Delete this patient?')) return;
+  DB.set('patients', DB.get('patients').filter(p => p.id !== id));
+  showToast('Patient deleted');
+  renderTable();
+}
+
+document.getElementById('patient-modal').addEventListener('click', e => { if(e.target === e.currentTarget) closeModal('patient-modal'); });
+renderTable();
+</script>
+</body>
+</html>
